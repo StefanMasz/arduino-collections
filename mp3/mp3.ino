@@ -7,11 +7,14 @@ SoftwareSerial mySoftwareSerial(10, 11); // RX, TX
 DFRobotDFPlayerMini myDFPlayer;
 void printDetail(uint8_t type, int value);
 int inPinFromController = 2;
-int val = 0;
+int val = LOW;
+int event_run = 0;
+int event_stop = 0;
+int running = 0;
 
 void setup()
 {
-  pinMode(inPinFromController, INPUT);
+  pinMode(inPinFromController, INPUT_PULLUP);
   mySoftwareSerial.begin(9600);
   Serial.begin(115200);
   Serial.println();
@@ -33,15 +36,25 @@ void loop()
 {
   static unsigned long timer = millis();
   val = digitalRead(inPinFromController);
-  Serial.println(val);
-  if (val == 1){
+  
+  if (val == LOW){
+    event_run = 1;
+  } else {
+    event_stop = 1;
+  }
+
+  if (event_run == 1 && running == 0) {
     Serial.println("Start playing");
     myDFPlayer.loop(1);
-    myDFPlayer.play(1);  //Play the first mp3
-  } else {
-     myDFPlayer.pause();  //pause the mp3
+    running = 1;
+    event_run = 0;
   }
-  
+
+  if (event_stop == 1 && running == 1){
+    myDFPlayer.pause();  //pause the mp3
+    running = 0;
+    event_stop = 0;
+  }
   if (myDFPlayer.available()) {
     printDetail(myDFPlayer.readType(), myDFPlayer.read()); //Print the detail message from DFPlayer to handle different errors and states.
   }
