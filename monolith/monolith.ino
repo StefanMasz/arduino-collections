@@ -7,6 +7,7 @@
 const int pinSwitch = A2; //Pin Reed
 int running = 0;
 int statusPhase1 = HIGH;
+int outputToMp3Slave = 2;   // PIN to slave 
 
 // Parameter 1 = number of pixels in strip
 // Parameter 2 = Arduino pin number (most are valid)
@@ -24,6 +25,8 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(13, PIN, NEO_GRB + NEO_KHZ800);
 // on a live circuit...if you must, connect GND first.
 
 void setup() {
+  pinMode(outputToMp3Slave, OUTPUT); 
+  digitalWrite(outputToMp3Slave, LOW);
   // This is for Trinket 5V 16MHz, you can remove these three lines if you are not using a Trinket
   #if defined (__AVR_ATtiny85__)
     if (F_CPU == 16000000) clock_prescale_set(clock_div_1);
@@ -35,17 +38,21 @@ void setup() {
   strip.setBrightness(50);
   strip.show(); // Initialize all pixels to 'off'
   Serial.begin(9600);
+  Serial.println("Monolith");
 }
 
 void loop() {
   statusPhase1 = digitalRead(pinSwitch); 
   if (statusPhase1 == LOW){ //swtich triggert
+    Serial.println("swtich triggert");
     if (running == 1) {
       Serial.println("Stopping");
+      digitalWrite(outputToMp3Slave, HIGH);
       running = 0;
       colorWipe(strip.Color(0, 0, 0), 50); // off
     } else {
       Serial.println("Starting");
+      digitalWrite(outputToMp3Slave, LOW);
       colorWipe(strip.Color(255, 0, 0), 50); // red
       running = 1; 
     }
@@ -80,6 +87,8 @@ void rainbow(uint8_t wait) {
     strip.show();
     statusPhase1 = digitalRead(pinSwitch); 
     if (statusPhase1 == LOW){ //swtich triggert
+       Serial.println("Stopping");
+       digitalWrite(outputToMp3Slave, HIGH);
        colorWipe(strip.Color(0, 0, 0), 50); // off
        running = 0;
        break;
