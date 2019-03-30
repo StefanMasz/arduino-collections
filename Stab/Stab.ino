@@ -1,5 +1,9 @@
+#include <RCSwitch.h>
 
-const int pinSwitch = 10; //Pin Reed
+RCSwitch sender = RCSwitch();
+const int pinSwitch = 10; //Pin Reed1
+const int pinSwitchSender = 8; //Pin Reed2
+const int pinSender = 7; //Pin Sender
 const int pinFire1 = 2; //Pin Rohr 1
 const int pinFire2 = 3; //Pin Rohr 2
 const int pinFire3 = 4; //Pin Rohr 3
@@ -8,23 +12,41 @@ const int pinFire4 = 5; //Pin Rohr 4
 int actionFire = 0;
 int statusPhase1 = HIGH;
 int statusPhase2 = HIGH;
+int statusSwitchSender = HIGH;
+int statusSwitchSenderPhase2 = HIGH;
 
 void setup()
 {
+  Serial.begin(9600);
+  Serial.println("Start");
+  sender.enableTransmit(pinSender);  
   pinMode(pinFire1, OUTPUT);
   pinMode(pinFire2, OUTPUT);
   pinMode(pinFire3, OUTPUT);
   pinMode(pinFire4, OUTPUT); 
   pinMode(pinSwitch, INPUT_PULLUP);
-  Serial.begin(9600);
+  pinMode(pinSwitchSender, INPUT_PULLUP);
 }  
   
 void loop()
 {
+  statusSwitchSender = digitalRead(pinSwitchSender);
+  if (statusSwitchSender == LOW){
+    Serial.println("Sender Phase 1 Active");
+    delay(1000);
+    statusSwitchSenderPhase2 = digitalRead(pinSwitchSender);
+  }
+  if (statusSwitchSenderPhase2 == LOW){
+      Serial.println("Sende Funksignal 1111");
+      sender.send(1111, 24); // Der 433mhz Sender versendet die Dezimalzahl „1234“
+      statusSwitchSenderPhase2 = HIGH;
+      delay(1000);  // Eine Sekunde Pause, danach startet der Sketch von vorne
+  }
+  
   statusPhase1 = digitalRead(pinSwitch); 
   if (statusPhase1 == LOW){
     Serial.println("Phase 1 activ");
-    delay(1500);
+    delay(1000);
     statusPhase2 = digitalRead(pinSwitch); 
   }
   //check for swtich state and trigger Actions

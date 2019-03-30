@@ -1,9 +1,13 @@
 #include <Adafruit_NeoPixel.h>
+#include <RCSwitch.h>
+
 #ifdef __AVR__
   #include <avr/power.h>
 #endif
 
 #define PIN A1
+
+RCSwitch recevier = RCSwitch();
 const int pinSwitch = A2; //Pin Reed
 int running = 0;
 int statusPhase1 = HIGH;
@@ -25,6 +29,7 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(13, PIN, NEO_GRB + NEO_KHZ800);
 // on a live circuit...if you must, connect GND first.
 
 void setup() {
+  recevier.enableReceive(3);
   pinMode(outputToMp3Slave, OUTPUT); 
   digitalWrite(outputToMp3Slave, LOW);
   // This is for Trinket 5V 16MHz, you can remove these three lines if you are not using a Trinket
@@ -41,9 +46,9 @@ void setup() {
   Serial.println("Monolith");
 }
 
-void loop() {
+void loop() { 
   statusPhase1 = digitalRead(pinSwitch); 
-  if (statusPhase1 == LOW){ //swtich triggert
+  if (statusPhase1 == LOW || isRadioSignaltriggert()){ //swtich triggert
     Serial.println("swtich triggert");
     if (running == 1) {
       Serial.println("Stopping");
@@ -61,6 +66,28 @@ void loop() {
   if (running == 1) {
     rainbow(30);
   } 
+}
+
+int isRadioSignaltriggert (){
+  if (recevier.available()) // Wenn ein Code Empfangen wird...
+  {
+    int value = recevier.getReceivedValue(); // Empfangene Daten werden unter der Variable "value" gespeichert.
+  
+    if (value == 0) {
+      Serial.println("Unbekannter Code");
+    } // Wenn die Empfangenen Daten "0" sind, wird "Unbekannter Code" angezeigt.
+    
+    else {
+      Serial.print("Empfangen: ");
+      Serial.println( recevier.getReceivedValue() );
+      if (value == 1111){
+        return true;
+      }
+    } // Wenn der Empfangene Code brauchbar ist, wird er hier an den Serial Monitor gesendet.
+
+    recevier.resetAvailable(); // Hier wird der Empfänger "resettet"
+  }
+  return false;
 }
 
 // Slightly different, this makes the rainbow equally distributed throughout
