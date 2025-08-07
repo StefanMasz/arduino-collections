@@ -6,9 +6,13 @@
 #define LEDPIN A1
 
 // Globale Variablen für Animation
-unsigned long lastUpdate = 0;
-int brightness = 0;
-int fadeDirection = 1;  // 1 = heller, -1 = dunkler
+unsigned long lastRainbowUpdate = 0;
+int rainbowPosition = 0;
+bool rainbowActive = false;
+
+//
+unsigned long lastRFIDCheck = 0;
+const unsigned long rfidCheckInterval = 5000;
 
 // Parameter 1 = number of pixels in strip
 // Parameter 2 = Arduino pin number (most are valid)
@@ -25,11 +29,16 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(6, LEDPIN, NEO_GRB + NEO_KHZ800);
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance.
 MFRC522::MIFARE_Key key;
 MFRC522::StatusCode status;
+const int reedPin = 6;
 
 void setup() {
   Serial.begin(9600);  // Initiate a serial communication
   SPI.begin();         // Initiate  SPI bus
   mfrc522.PCD_Init();  // Initiate MFRC522
+
+  pinMode(reedPin, INPUT_PULLUP);
+  pinMode(7, OUTPUT);
+  digitalWrite(7, LOW);
 
   Serial.println("Approximate your card to the reader...");
   Serial.println();
@@ -57,58 +66,103 @@ void oneColor(uint32_t color, int ledCount) {
   }
 }
 
-void loop() {
-  // Look for new cards
-  if (!mfrc522.PICC_IsNewCardPresent()) {
-    return;
-  }
-  // Select one of the cards
-  if (!mfrc522.PICC_ReadCardSerial()) {
-    return;
-  }
+void updateRainbowNonBlocking() {
+  const unsigned long rainbowInterval = 5;  // Sehr schnell! (kleinere Zahl = schneller)
+  if (!rainbowActive) return;
 
-  String uuid = readUUID();
-  if (uuid.substring(1) != "43 0D FE 27") {
-    Serial.println("Access denied - unknown card");
-    mfrc522.PICC_HaltA();
-    mfrc522.PCD_StopCrypto1();
-    return;
-  }
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastRainbowUpdate >= rainbowInterval) {
+    lastRainbowUpdate = currentMillis;
 
-  byte buffer[18];
-  byte block;
-  byte len;
-
-  block = 16;
-  len = 18;
-  
-  while (true) {
-
-    // Versuch, Block zu lesen
-    decryptBlock(block, key);
-    byte buffer[18];
-    int counter = readCounterValue(block, buffer, 18);
-
-    Serial.println(counter);
-    if (counter % 2 == 0) {
-        Serial.println("Even counter - LEDs ON");
-        oneColor(strip.Color(255, 0, 0), 6);
-      } else {
-        Serial.println("Odd counter - LEDs OFF");
-        oneColor(0, 6);
-      }
-
-    delay(2000);
-
-    // Wenn Karte entfernt wurde → raus hier!
-    if (!mfrc522.PICC_IsNewCardPresent()) {
-      Serial.println("Card removed.");
-      break;
+    for (uint16_t i = 0; i < strip.numPixels(); i++) {
+      // Jeder Pixel bekommt einen leicht versetzten Farbbereich
+      int colorPosition = (rainbowPosition + i * 90) % 256;
+      strip.setPixelColor(i, wheel(colorPosition));
     }
-  }
 
-  mfrc522.PICC_HaltA();
-  mfrc522.PCD_StopCrypto1();
+    strip.show();
+    rainbowPosition = (rainbowPosition + 9) % 256;  // schneller vorwärts!
+  }
+}
+
+int readCounterWrapper(){
+  byte block = 16;
+  byte len = 18;
+  decryptBlock(block, key);
+  byte buffer[18];
+
+  return readCounterValue(block, buffer, 18);
+}
+
+bool readCard() {
+  mfrc522.PCD_Init();  // HACK: Reset des Lesers erzwingt "neue Karte"
+  delay(5);
+  if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+    return true;
+  }
+  return false;
+}
+
+unsigned long openSince = 0;
+bool initialReadDone = false;
+unsigned long lastRFIDAttempt = 0;
+const unsigned long RFID_INTERVAL = 10000; // 10 Sekunden
+
+void loop() {
+  updateRainbowNonBlocking();
+  delay(20);
+
+  unsigned long currentMillis = millis();
+  int state = digitalRead(reedPin);
+
+  if (state == HIGH) {  // offen (kein Magnet)
+    if (openSince == 0) {
+      openSince = currentMillis;
+      initialReadDone = false;
+      lastRFIDAttempt = 0;
+    }
+
+    if (currentMillis - openSince >= 2000) {
+      if (!initialReadDone || currentMillis - lastRFIDAttempt >= RFID_INTERVAL) {
+        initialReadDone = true;
+        lastRFIDAttempt = currentMillis;
+
+        Serial.println("RFID-Check nach Kiste offen >= 2s");
+        mfrc522.PCD_SoftPowerUp();
+        delay(50);
+        if (readCard()) {
+          Serial.println("Karte ist da!");
+          String uuid = readUUID();
+          if (uuid.substring(1) == "43 0D FE 27") {
+            int counter = readCounterWrapper();
+            Serial.print("Counter: ");
+            Serial.println(counter);
+            mfrc522.PCD_SoftPowerDown();
+            if (counter % 2 == 0) {
+              Serial.println("Even counter - LEDs ON");
+              rainbowActive = true;
+            } else {
+              Serial.println("Odd counter - LEDs OFF");
+              rainbowActive = false;
+              oneColor(0, 6);
+            }
+          } else {
+            Serial.println("Access denied - unknown card");
+          }
+        } else {
+          Serial.println("Karte ist NICHT da!");
+        }
+      }
+    }
+  } else {  // geschlossen
+    if (openSince != 0) {
+      Serial.println("Kiste zu!");
+    }
+    openSince = 0;
+    initialReadDone = false;
+    lastRFIDAttempt = 0;
+    delay(200);
+  }
 }
 
 int readCounterValue(byte block, byte *buffer, byte len) {
@@ -120,6 +174,8 @@ int readCounterValue(byte block, byte *buffer, byte len) {
   }
 
   dump_byte_array(buffer, len);
+  mfrc522.PICC_HaltA();
+  mfrc522.PCD_StopCrypto1();
   return (int)buffer[0];
 }
 
@@ -180,31 +236,16 @@ void flashAllLeds(uint32_t color, int durationMs, int repetitions) {
   }
 }
 
-void loadingAnimation() {
-  int cycles = 3;             // Wie oft die Welle durchläuft
-  int delayMs = 40;           // Geschwindigkeit der Animation
-  int tailLength = 8;         // Länge des Schweifs (mehr LEDs gleichzeitig)
-
-  for (int c = 0; c < cycles; c++) {
-        for (int head = 0; head < strip.numPixels() + tailLength; head++) {
-      strip.clear();
-      for (int t = 0; t < tailLength; t++) {
-        int ledIndex = head - t;
-        uint32_t color = strip.Color(random(50, 256), random(50, 256), random(50, 256));
-        if (ledIndex >= 0 && ledIndex < strip.numPixels()) {
-          // Schweif wird dunkler
-          int brightness = 255 - (t * (255 / tailLength));
-          uint32_t dimColor = strip.Color(
-            ((color >> 16) & 0xFF) * brightness / 255,
-            ((color >> 8) & 0xFF) * brightness / 255,
-            (color & 0xFF) * brightness / 255
-          );
-          strip.setPixelColor(ledIndex, dimColor);
-        }
-      }
-      strip.show();
-      delay(delayMs);
-    }
+// Helper-Funktion für Regenbogenfarben
+uint32_t wheel(byte pos) {
+  if (pos < 85) {
+    return strip.Color(pos * 3, 255 - pos * 3, 0);
+  } else if (pos < 170) {
+    pos -= 85;
+    return strip.Color(255 - pos * 3, 0, pos * 3);
+  } else {
+    pos -= 170;
+    return strip.Color(0, pos * 3, 255 - pos * 3);
   }
 }
 
