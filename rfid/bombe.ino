@@ -167,6 +167,8 @@ void loop() {
     int noOfSuccessfulLoadings = decreaseMemCounter();
   }
 
+  mfrc522.PCD_SoftPowerUp();
+  delay(100);
   // Look for new cards
   if (!mfrc522.PICC_IsNewCardPresent()) {
     return;
@@ -200,6 +202,7 @@ void loop() {
     if (counter % 2 == 0) {  // counter ist gerade - das Transport-Artefakt ist geladen!
       Serial.print("Counter on card is even - starting loading animation!");
       int noOfSuccessfulLoadings = increaseCounter(block, buffer, len);
+      mfrc522.PCD_SoftPowerDown();
       loadingAnimation();
     } else {
       Serial.print("Counter on card is uneven - do nothing!");
